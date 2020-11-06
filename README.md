@@ -4,6 +4,6 @@
 ### TODOs
 
 - [ ] go through examples
-- [ ] TF2 Model Compression
-- [ ] FedMC on EMNIST
-- [ ] FedMC on Stackoverflow
+- [ ] TF2 model compression
+- [ ] FedMC on emnist
+- [ ] FedMC on stackoverflow
