@@ -29,10 +29,10 @@ import tensorflow as tf
 import tensorflow_federated as tff
 
 from optimization.cifar100 import federated_cifar100
-from optimization.emnist import federated_emnist
+from src import federated_emnist_prune
 from optimization.emnist_ae import federated_emnist_ae
 from optimization.shakespeare import federated_shakespeare
-from optimization.shared import fed_avg_schedule
+from src import fed_avg_schedule_prune
 from optimization.shared import optimizer_utils
 from optimization.stackoverflow import federated_stackoverflow
 from optimization.stackoverflow_lr import federated_stackoverflow_lr
@@ -228,7 +228,7 @@ def main(argv):
       A `tff.templates.IterativeProcess`.
     """
 
-    return fed_avg_schedule.build_fed_avg_process(
+    return fed_avg_schedule_prune.build_fed_avg_process(
         model_fn=model_fn,
         client_optimizer_fn=client_optimizer_fn,
         client_lr=client_lr_schedule,
@@ -244,7 +244,7 @@ def main(argv):
   if FLAGS.task == 'cifar100':
     run_federated_fn = federated_cifar100.run_federated
   elif FLAGS.task == 'emnist_cr':
-    run_federated_fn = federated_emnist.run_federated
+    run_federated_fn = federated_emnist_prune.run_federated
   elif FLAGS.task == 'emnist_ae':
     run_federated_fn = federated_emnist_ae.run_federated
   elif FLAGS.task == 'shakespeare':
