@@ -42,6 +42,7 @@ def run_federated(
     client_datasets_random_seed: Optional[int] = None,
     model: Optional[str] = 'cnn',
     total_rounds: Optional[int] = 1500,
+    enable_prune: Optional[bool] = True,
     experiment_name: Optional[str] = 'federated_emnist_cr',
     root_output_dir: Optional[str] = '/tmp/fed_opt',
     max_eval_batches: Optional[int] = None,
@@ -110,7 +111,7 @@ def run_federated(
 
 
 
-  model_builder = functools.partial(create_model, only_digits=False, prune=True)
+  model_builder = functools.partial(create_model, only_digits=False, prune=enable_prune)
   loss_builder = tf.keras.losses.SparseCategoricalCrossentropy
   metrics_builder = lambda: [tf.keras.metrics.SparseCategoricalAccuracy()]
 

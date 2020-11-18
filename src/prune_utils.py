@@ -4,9 +4,14 @@ from tensorflow_federated.python.learning import model as model_lib
 from tensorflow_federated.python.common_libs import structure
 import tensorflow as tf
 import attr
+keras = tf.keras
+K = keras.backend
+from tensorflow_model_optimization.python.core.keras import utils
+import numpy as np
+import inspect
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_wrapper
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_impl
-
+from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule as pruning_sched
 def get_vars_by_name(variables, name):
     vars = []
     for v in variables:
@@ -40,6 +45,18 @@ class PrunableLayer(pruning_wrapper.PruneLowMagnitude):
     """
     Augment a keras layer into a prunable layer
     """
+
+    def __init__(self,
+                 layer,
+                 pruning_schedule=pruning_sched.ConstantSparsity(0.5, 0),
+                 block_size=(1, 1),
+                 block_pooling_type='AVG',
+                 enable_prune=True,
+                 **kwargs):
+        super(PrunableLayer, self).__init__(layer, pruning_schedule, block_size, block_pooling_type, **kwargs)
+        self.enable_prune = enable_prune
+
+
     def build(self, input_shape):
         super(pruning_wrapper.PruneLowMagnitude, self).build(input_shape)
 
@@ -88,6 +105,45 @@ class PrunableLayer(pruning_wrapper.PruneLowMagnitude):
             block_size=self.block_size,
             block_pooling_type=self.block_pooling_type)
 
+    def call(self, inputs, training=None):
+        if training is None:
+            training = K.learning_phase()
+
+        if self.enable_prune:
+            def add_update():
+                with tf.control_dependencies([
+                    tf.debugging.assert_greater_equal(
+                        self.pruning_step,
+                        np.int64(0),
+                        message=self._PRUNE_CALLBACK_ERROR_MSG)
+                ]):
+                    with tf.control_dependencies(
+                            [self.pruning_obj.conditional_mask_update()]):
+                        return tf.no_op('update')
+
+            def no_op():
+                return tf.no_op('no_update')
+
+            update_op = utils.smart_cond(training, add_update, no_op)
+            self.add_update(update_op)
+            # Always execute the op that performs weights = weights * mask
+            # Relies on UpdatePruningStep callback to ensure the weights
+            # are sparse after the final backpropagation.
+            #
+            # self.add_update does nothing during eager execution.
+            self.add_update(self.pruning_obj.weight_mask_op())
+            # TODO(evcu) remove this check after dropping py2 support. In py3 getargspec
+            # is deprecated.
+        if hasattr(inspect, 'getfullargspec'):
+            args = inspect.getfullargspec(self.layer.call).args
+        else:
+            args = inspect.getargspec(self.layer.call).args
+        # Propagate the training bool to the underlying layer if it accepts
+        # training as an arg.
+        if 'training' in args:
+            return self.layer.call(inputs, training=training)
+
+        return self.layer.call(inputs)
 
 
 def assign_add(tensors):

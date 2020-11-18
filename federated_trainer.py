@@ -61,7 +61,7 @@ with utils_impl.record_hparam_flags() as shared_flags:
   flags.DEFINE_integer('client_datasets_random_seed', 1,
                        'Random seed for client sampling.')
   flags.DEFINE_integer('total_rounds', 200, 'Number of total training rounds.')
-
+  flags.DEFINE_boolean('enable_prune', True, 'Enable pruning or not')
   # Training loop configuration
   flags.DEFINE_string(
       'experiment_name', None, 'The name of this experiment. Will be append to '
