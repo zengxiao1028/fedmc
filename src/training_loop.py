@@ -110,7 +110,7 @@ def _compute_numpy_l2_difference(model, previous_model):
 
 def _comopute_sparse_rate(model):
   flat = np.hstack([a.flatten() for a in model.prune_masks])
-  return np.mean(flat)
+  return 1 - np.mean(flat)
 
 
 def run(iterative_process: tff.templates.IterativeProcess,

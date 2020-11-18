@@ -19,7 +19,7 @@ def create_model(only_digits=True, prune=True):
               tf.keras.layers.Dense(10 if only_digits else 62, activation=tf.nn.softmax)
               ]
     if prune:
-        layers = [prune_utils.PrunableLayer(l, pruning_sched.ConstantSparsity(0.5, 3)) for l in layers]
+        layers = [prune_utils.PrunableLayer(l, pruning_sched.ConstantSparsity(0.5, 50)) for l in layers]
     model = tf.keras.models.Sequential(layers)
     return model
 
