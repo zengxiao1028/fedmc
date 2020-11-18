@@ -27,7 +27,8 @@ from absl import app
 from absl import flags
 import tensorflow as tf
 import tensorflow_federated as tff
-
+client_devices = tf.config.list_logical_devices('GPU')
+tff.backends.native.set_local_execution_context(client_tf_devices=client_devices)
 from optimization.cifar100 import federated_cifar100
 from optimization.emnist import federated_emnist
 from optimization.emnist_ae import federated_emnist_ae
