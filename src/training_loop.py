@@ -121,6 +121,7 @@ def run(iterative_process: tff.templates.IterativeProcess,
         train_eval_fn: Optional[Callable[[Any], Dict[str, float]]] = None,
         test_fn: Optional[Callable[[Any], Dict[str, float]]] = None,
         root_output_dir: Optional[str] = '/tmp/fed_opt',
+        init_checkpoint_dir: Optional[str] = None,
         hparam_dict: Optional[Dict[str, Any]] = None,
         write_metrics_with_bz2: Optional[bool] = True,
         rounds_per_eval: Optional[int] = 1,
@@ -201,7 +202,15 @@ def run(iterative_process: tff.templates.IterativeProcess,
       rounds_per_profile)
 
   logging.info('Asking checkpoint manager to load checkpoint.')
-  state, round_num = checkpoint_mngr.load_latest_checkpoint(initial_state)
+  if init_checkpoint_dir and os.path.exists(init_checkpoint_dir):
+    state, round_num = checkpoint_mngr._load_checkpoint_from_path(initial_state, init_checkpoint_dir)
+    tmp = init_checkpoint_dir.split('_')
+    if len(tmp) >= 2 and tmp[-1].isnumeric():
+      round_num = int(tmp[-1])
+    else:
+      round_num = 0
+  else:
+    state, round_num = checkpoint_mngr.load_latest_checkpoint(initial_state)
 
   if state is None:
     logging.info('Initializing experiment from scratch.')

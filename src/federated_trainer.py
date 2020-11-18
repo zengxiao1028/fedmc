@@ -68,6 +68,8 @@ with utils_impl.record_hparam_flags() as shared_flags:
       '--root_output_dir to separate experiment results.')
   flags.DEFINE_string('root_output_dir', '/tmp/fed_opt/',
                       'Root directory for writing experiment output.')
+  flags.DEFINE_string('init_checkpoint_dir', None,
+                      'dir for restoring checkpoint, use \'root_output_dir\' if None')
   flags.DEFINE_boolean(
       'write_metrics_with_bz2', True, 'Whether to use bz2 '
       'compression when writing output metrics to a csv file.')
