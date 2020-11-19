@@ -20,10 +20,10 @@ def create_model(only_digits=True, prune=True, prune_schedule_fn=None):
               tf.keras.layers.Dense(10 if only_digits else 62, activation=tf.nn.softmax)
               ]
     if not prune_schedule_fn:
-        #prune_schedule_fn = lambda : pruning_sched.ConstantSparsity(0.5, 0)
-        prune_schedule_fn = lambda: pruning_sched.PolynomialDecay(0, 0.5, begin_step=5,
-                                                                  end_step=300, frequency=1,
-                                                                  power=2)
+        prune_schedule_fn = lambda : pruning_sched.ConstantSparsity(0.5, 0)
+        # prune_schedule_fn = lambda: pruning_sched.PolynomialDecay(0.0, 0.7, begin_step=0,
+        #                                                           end_step=2000, frequency=1,
+        #                                                           power=2)
     tmp_layers = []
     for l in layers:
         if isinstance(l, tf.keras.layers.Dropout):

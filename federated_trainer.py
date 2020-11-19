@@ -61,7 +61,7 @@ with utils_impl.record_hparam_flags() as shared_flags:
   flags.DEFINE_integer('client_datasets_random_seed', 1,
                        'Random seed for client sampling.')
   flags.DEFINE_integer('total_rounds', 200, 'Number of total training rounds.')
-  flags.DEFINE_boolean('enable_prune', True, 'Enable pruning or not')
+
   # Training loop configuration
   flags.DEFINE_string(
       'experiment_name', None, 'The name of this experiment. Will be append to '
@@ -89,6 +89,16 @@ with utils_impl.record_hparam_flags() as task_flags:
   # Task specification
   flags.DEFINE_enum('task', None, _SUPPORTED_TASKS,
                     'Which task to perform federated training on.')
+
+with utils_impl.record_hparam_flags() as prune_flags:
+    # pruning related tasks
+    flags.DEFINE_boolean('enable_prune', False, 'Enable pruning or not')
+    flags.DEFINE_integer('begin_step', 300, 'which step should the pruning start from')
+    flags.DEFINE_integer('end_step', 1500, 'which step should the pruning start from')
+    flags.DEFINE_integer('frequency', 1, 'every \'frequency\' step runs the pruning')
+    flags.DEFINE_float('initial_sparsity', 0.0, 'Sparsity (%) at which pruning begins.')
+    flags.DEFINE_float('final_sparsity', 0.7, 'Sparsity (%) at which pruning ends.')
+    flags.DEFINE_integer('power', 2, 'Exponent to be used in the sparsity function.')
 
 with utils_impl.record_hparam_flags() as cifar100_flags:
   # CIFAR-100 flags
@@ -169,6 +179,7 @@ def _get_hparam_flags():
   opt_flag_dict = optimizer_utils.remove_unused_flags('client', opt_flag_dict)
   opt_flag_dict = optimizer_utils.remove_unused_flags('server', opt_flag_dict)
   hparam_dict.update(opt_flag_dict)
+  hparam_dict.update(utils_impl.lookup_flag_values(prune_flags))
 
   # Update with task-specific flags.
   task_name = FLAGS.task
@@ -243,6 +254,7 @@ def main(argv):
   shared_args['iterative_process_builder'] = iterative_process_builder
   task_args = _get_task_args()
   hparam_dict = _get_hparam_flags()
+  prune_args = utils_impl.lookup_flag_values(prune_flags)
 
   if FLAGS.task == 'cifar100':
     run_federated_fn = federated_cifar100.run_federated
@@ -261,7 +273,7 @@ def main(argv):
         '--task flag {} is not supported, must be one of {}.'.format(
             FLAGS.task, _SUPPORTED_TASKS))
 
-  run_federated_fn(**shared_args, **task_args, hparam_dict=hparam_dict)
+  run_federated_fn(**shared_args, **task_args, prune_config=prune_args, hparam_dict=hparam_dict)
 
 
 if __name__ == '__main__':
