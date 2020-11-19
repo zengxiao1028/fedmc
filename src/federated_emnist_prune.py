@@ -24,7 +24,7 @@ pruning_schedule = tfmot.sparsity.keras.PolynomialDecay(
 from absl import logging
 import tensorflow as tf
 import tensorflow_federated as tff
-
+from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule as pruning_sched
 from src import training_loop
 from utils import training_utils
 from utils.datasets import emnist_dataset
@@ -40,7 +40,7 @@ def run_federated(
     clients_per_round: int,
     max_batches_per_client: Optional[int] = -1,
     client_datasets_random_seed: Optional[int] = None,
-    model: Optional[str] = 'cnn',
+    prune_config: Optional[dict] = None,
     total_rounds: Optional[int] = 1500,
     enable_prune: Optional[bool] = True,
     experiment_name: Optional[str] = 'federated_emnist_cr',
@@ -109,9 +109,21 @@ def run_federated(
   input_spec = emnist_train.create_tf_dataset_for_client(
       emnist_train.client_ids[0]).element_spec
 
+  if prune_config:
+      prune_schedule_fn = lambda: pruning_sched.PolynomialDecay(prune_config['initial_sparsity'],
+                                                                prune_config['final_sparsity'],
+                                                                begin_step=prune_config['begin_step'],
+                                                                end_step=prune_config['end_step'],
+                                                                frequency=prune_config['frequency'],
+                                                                power=prune_config['power'])
+      enable_prune = prune_config['enable_prune']
 
+  else:
+      prune_schedule_fn = None
+      enable_prune = False
+  model_builder = functools.partial(create_model, only_digits=False, prune=enable_prune,
+                                    prune_schedule_fn=prune_schedule_fn)
 
-  model_builder = functools.partial(create_model, only_digits=False, prune=enable_prune)
   loss_builder = tf.keras.losses.SparseCategoricalCrossentropy
   metrics_builder = lambda: [tf.keras.metrics.SparseCategoricalAccuracy()]
 
