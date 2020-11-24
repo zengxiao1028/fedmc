@@ -142,6 +142,47 @@ class ClientOutput(object):
     optimizer_output = attr.ib()
 
 
+def update_mask(weights, mask, sparsity):
+    abs_weights = tf.math.abs(weights)
+    k = tf.dtypes.cast(
+        tf.math.round(
+            tf.dtypes.cast(tf.size(abs_weights), tf.float32) *
+            (1 - sparsity)), tf.int32)
+    # Sort the entire array
+    values, _ = tf.math.top_k(
+        tf.reshape(abs_weights, [-1]), k=tf.size(abs_weights))
+    # Grab the (k-1)th value
+    current_threshold = tf.gather(values, k - 1)
+    new_mask = tf.dtypes.cast(
+        tf.math.greater_equal(abs_weights, current_threshold), weights.dtype)
+
+    return mask.assign(new_mask)
+
+
+
+
+
+def update_masks(model):
+    """
+    :param model: a tff.learning.model or a enhanced one
+    """
+
+    keras_model = model._model._keras_model
+    weight_vars, mask_vars, target_sparsities = [], [], []
+    for layer in keras_model.layers:
+        if hasattr(layer, 'pruning_vars'):
+            for w_var, m_var, sparsity in layer.pruning_vars:
+                weight_vars.append(w_var)
+                mask_vars.append(m_var)
+                sparsity = layer.pruning_schedule(layer.pruning_step)
+                target_sparsities.append(sparsity)
+
+    update_mask_ops =tf.nest.map_structure(lambda a, b, c: update_mask(a, b, c),
+                            weight_vars, mask_vars, target_sparsities)
+
+
+
+
 def create_client_update_fn():
     """Returns a tf.function for the client_update.
 
@@ -184,6 +225,8 @@ def create_client_update_fn():
             grads_and_vars = zip(grads, model_weights.trainable)
             client_optimizer.apply_gradients(grads_and_vars)
             num_examples += tf.shape(output.predictions)[0]
+
+        update_masks(model)
 
         aggregated_outputs = model.report_local_outputs()
         weights_delta = tf.nest.map_structure(lambda a, b: a - b,
@@ -340,6 +383,10 @@ def build_fed_avg_process(
             client_outputs.optimizer_output['prune_masks'],
             weight=client_weight)
 
+        aggregated_masks_num = tff.federated_mean(
+            client_outputs.optimizer_output['num_masks'],
+            weight=client_weight)
+
         # apply model delta and average mask to server
         server_state = tff.federated_map(server_update_fn,
                                          (server_state, model_delta, aggregated_model_masks))
@@ -348,7 +395,7 @@ def build_fed_avg_process(
         if aggregated_outputs.type_signature.is_struct():
             aggregated_outputs = tff.federated_zip(aggregated_outputs)
 
-        return server_state, aggregated_outputs
+        return server_state, aggregated_outputs, aggregated_masks_num
 
     @tff.federated_computation
     def initialize_fn():
