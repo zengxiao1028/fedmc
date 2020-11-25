@@ -18,9 +18,9 @@ python federated_trainer.py --task=emnist_cr \
                             --server_adam_beta_1=0.9 \
                             --server_adam_beta_2=0.99 \
                             --rounds_per_checkpoint=100 \
-                            --experiment_name=prune_emnist_fedavg_spsty80 \
+                            --experiment_name=prune_emnist_fedavg_test3 \
                             --enable_prune=true \
-                            --final_sparsity=0.8 \
+                            --final_sparsity=0.9 \
                             --root_output_dir=./result
 
 

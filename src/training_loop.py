@@ -109,7 +109,7 @@ def _compute_numpy_l2_difference(model, previous_model):
   return l2_total_tensor.numpy()
 
 def _comopute_sparse_rate(model):
-  flat = np.hstack([a.flatten() for a in model.prune_masks])
+  flat = np.hstack([a.flatten() for a in model.pruning_vars[1]])
   return 1 - np.mean(flat)
 
 

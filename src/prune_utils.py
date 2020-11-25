@@ -12,6 +12,7 @@ import inspect
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_wrapper
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_impl
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule as pruning_sched
+
 def get_vars_by_name(variables, name):
     vars = []
     for v in variables:
@@ -19,19 +20,36 @@ def get_vars_by_name(variables, name):
             vars.append(v)
     return vars
 
+def get_pruning_vars(model):
+    """
+    Args:
+        model: tff model
+    """
+    keras_model = model._model._keras_model
+    weight_vars, mask_vars = [], []
+    for layer in keras_model.layers:
+        if hasattr(layer, 'pruning_vars'):
+            for w_var, m_var, threshold in layer.pruning_vars:
+                weight_vars.append(w_var)
+                mask_vars.append(m_var)
+
+    return weight_vars, mask_vars
+
+
 @attr.s(eq=False, frozen=True, slots=True)
 class PruneModelWeights(tff.learning.ModelWeights):
     """
     A class for storing pruning-related variables in additional to model vars.
     """
-    prune_masks = attr.ib()
+    pruning_vars = attr.ib()
 
     @classmethod
     def from_model(cls, model):
         py_typecheck.check_type(model, (model_lib.Model, tf.keras.Model))
-        prune_masks = get_vars_by_name(model.non_trainable_variables, 'prune_mask')
-        return cls(model.trainable_variables, model.non_trainable_variables, prune_masks)
+        pruning_vars = get_pruning_vars(model)
+        return cls(model.trainable_variables, model.non_trainable_variables, pruning_vars)
 
+    #deprecated
     @classmethod
     def from_tff_result(cls, struct):
         py_typecheck.check_type(struct, structure.Struct)
@@ -259,3 +277,11 @@ def assign_add(tensors):
     else:
         return tf.group(*tf.nest.flatten(
             tf.nest.map_structure(lambda a: a.assign(tf.math.add(a,1)), tensors)))
+
+def assign_add2(tensors1, tensors2):
+    if isinstance(tensors1, structure.Struct):
+        return tf.group(*structure.flatten(
+            structure.map_structure(lambda a, b: a.assign(tf.math.add(a, b)), tensors1, tensors2)))
+    else:
+        return tf.group(*tf.nest.flatten(
+            tf.nest.map_structure(lambda a, b: a.assign(tf.math.add(a, b)), tensors1, tensors2)))

@@ -34,6 +34,7 @@ from tensorflow_federated.python.tensorflow_libs import tensor_utils
 from src import prune_utils
 import tensorflow_model_optimization as tfmot
 
+
 # Convenience type aliases.
 ModelBuilder = Callable[[], tff.learning.Model]
 OptimizerBuilder = Callable[[float], tf.keras.optimizers.Optimizer]
@@ -71,17 +72,18 @@ class ServerState(object):
     model = attr.ib()
     optimizer_state = attr.ib()
     round_num = attr.ib()
+    server_masks = attr.ib()
     # This is a float to avoid type incompatibility when calculating learning rate
     # schedules.
 
 
 @tf.function
-def server_update(model, server_optimizer, server_state, weights_delta, agr_prune_masks):
+def server_update(model, server_optimizer, server_masks, server_state, weights_delta, agr_prune_masks):
     """Updates `server_state` based on `weights_delta`, increase the round number.
 
     Args:
-      model: A `tff.learning.Model`.
-      server_optimizer: A `tf.keras.optimizers.Optimizer`.
+      model: A `tff.learning.Model`. (brand new)
+      server_optimizer: A `tf.keras.optimizers.Optimizer`. (brand new)
       server_state: A `ServerState`, the state to be updated.
       weights_delta: An update to the trainable variables of the model.
       mask: aggregated prune mask
@@ -93,6 +95,8 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
     tff.utils.assign(model_weights, server_state.model)
     # Server optimizer variables must be initialized prior to invoking this
     tff.utils.assign(server_optimizer.variables(), server_state.optimizer_state)
+    #restore server masks from previous state
+    #tff.utils.assign(server_masks, server_state.server_masks)
 
     weights_delta, has_non_finite_weight = (
         tensor_utils.zero_all_if_any_non_finite(weights_delta))
@@ -107,8 +111,12 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
 
     server_optimizer.apply_gradients(grads_and_vars)
 
+    # update server masks
+    # prune_utils.assign_add2(server_masks, agr_prune_masks)
+
     # update mask in the end
-    tff.utils.assign(model_weights.prune_masks, agr_prune_masks)
+    tff.utils.assign(model_weights.pruning_vars[1], agr_prune_masks)
+
     # update pruning step
     pruning_steps = prune_utils.get_vars_by_name(model_weights.non_trainable, 'pruning_step')
     prune_utils.assign_add(pruning_steps)
@@ -118,7 +126,8 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
         server_state,
         model=model_weights,
         optimizer_state=server_optimizer.variables(),
-        round_num=server_state.round_num + 1.0)
+        round_num=server_state.round_num + 1.0,
+        server_masks=server_masks)
 
 
 @attr.s(eq=False, order=False, frozen=True)
@@ -142,30 +151,37 @@ class ClientOutput(object):
     optimizer_output = attr.ib()
 
 
-def update_mask(weights, mask, sparsity):
-    abs_weights = tf.math.abs(weights)
-    k = tf.dtypes.cast(
-        tf.math.round(
-            tf.dtypes.cast(tf.size(abs_weights), tf.float32) *
-            (1 - sparsity)), tf.int32)
-    # Sort the entire array
-    values, _ = tf.math.top_k(
-        tf.reshape(abs_weights, [-1]), k=tf.size(abs_weights))
-    # Grab the (k-1)th value
-    current_threshold = tf.gather(values, k - 1)
-    new_mask = tf.dtypes.cast(
-        tf.math.greater_equal(abs_weights, current_threshold), weights.dtype)
-
-    return mask.assign(new_mask)
-
-
-
-
-
+#TODO: update mask when needed
 def update_masks(model):
     """
     :param model: a tff.learning.model or a enhanced one
     """
+
+    def update_mask(weights, mask, sparsity):
+        abs_weights = tf.math.abs(weights)
+
+        k = tf.dtypes.cast(
+            tf.math.round(
+                tf.dtypes.cast(tf.size(abs_weights), tf.float32) *
+                (1 - sparsity)), tf.int32)
+
+        # orig_shape = tf.shape(abs_weights)
+        # z = -tf.math.log(-tf.math.log(tf.random.uniform(orig_shape, 0, 1)))
+        # sel = tf.reshape(abs_weights + z, [-1])
+        # _, indices = tf.math.top_k(sel, k, sorted=False)
+        # indices = tf.reshape(indices, [-1, 1])
+        # new_mask = tf.dtypes.cast(tf.scatter_nd(indices, tf.ones(tf.shape(indices)[0]), (tf.shape(sel)[0],) ), weights.dtype)
+        # new_mask = tf.reshape(new_mask, orig_shape)
+
+        # Sort the entire array
+        values, _ = tf.math.top_k(
+            tf.reshape(abs_weights, [-1]), k=tf.size(abs_weights))
+        # Grab the (k-1)th value
+        current_threshold = tf.gather(values, k - 1)
+        new_mask = tf.dtypes.cast(
+            tf.math.greater_equal(abs_weights, current_threshold), weights.dtype)
+
+        return new_mask
 
     keras_model = model._model._keras_model
     weight_vars, mask_vars, target_sparsities = [], [], []
@@ -174,12 +190,12 @@ def update_masks(model):
             for w_var, m_var, sparsity in layer.pruning_vars:
                 weight_vars.append(w_var)
                 mask_vars.append(m_var)
-                sparsity = layer.pruning_schedule(layer.pruning_step)
+                _, sparsity = layer.pruning_schedule(layer.pruning_step)
                 target_sparsities.append(sparsity)
 
-    update_mask_ops =tf.nest.map_structure(lambda a, b, c: update_mask(a, b, c),
+    new_masks =tf.nest.map_structure(lambda a, b, c: update_mask(a, b, c),
                             weight_vars, mask_vars, target_sparsities)
-
+    return new_masks
 
 
 
@@ -226,7 +242,7 @@ def create_client_update_fn():
             client_optimizer.apply_gradients(grads_and_vars)
             num_examples += tf.shape(output.predictions)[0]
 
-        update_masks(model)
+        new_masks = update_masks(model)
 
         aggregated_outputs = model.report_local_outputs()
         weights_delta = tf.nest.map_structure(lambda a, b: a - b,
@@ -245,9 +261,8 @@ def create_client_update_fn():
         return ClientOutput(
             weights_delta, client_weight, aggregated_outputs,
             collections.OrderedDict([('num_examples', num_examples),
-                                     ('prune_masks', model_weights.prune_masks)]
-                                    )
-        )
+                                   #  ('prune_masks', model_weights.pruning_vars[1]),
+                                    ('new_masks', new_masks)]) )
 
     return client_update
 
@@ -275,10 +290,17 @@ def build_server_init_fn(
         server_optimizer = server_optimizer_fn()
         model = model_fn()
         _initialize_optimizer_vars(model, server_optimizer)
+        model_weights = _get_weights(model)
+
+        #create server masks for aggregating client masks
+        server_masks = tf.nest.map_structure(lambda a: tf.zeros_like(a, dtype=a.dtype), model_weights.pruning_vars[1])
+
+        #server_masks = model_weights.pruning_vars[1]
         return ServerState(
-            model=_get_weights(model),
+            model=model_weights,
             optimizer_state=server_optimizer.variables(),
-            round_num=0.0)
+            round_num=0.0,
+            server_masks=server_masks)
 
     return server_init_tf
 
@@ -340,7 +362,7 @@ def build_fed_avg_process(
         return client_update(model_fn(), tf_dataset, initial_model_weights,
                              client_optimizer, client_weight_fn)
 
-    @tff.tf_computation(server_state_type, model_weights_type.trainable, model_weights_type.prune_masks)
+    @tff.tf_computation(server_state_type, model_weights_type.trainable, server_state_type.server_masks)
     def server_update_fn(server_state, model_delta, agr_prune_masks):
         model = model_fn()
         server_lr = server_lr_schedule(server_state.round_num)
@@ -348,7 +370,10 @@ def build_fed_avg_process(
         # We initialize the server optimizer variables to avoid creating them
         # within the scope of the tf.function server_update.
         _initialize_optimizer_vars(model, server_optimizer)
-        return server_update(model, server_optimizer, server_state, model_delta, agr_prune_masks)
+
+        server_masks = tf.nest.map_structure(lambda a: tf.zeros_like(a, dtype=a.dtype) , _get_weights(model).pruning_vars[1])
+
+        return server_update(model, server_optimizer, server_masks, server_state, model_delta, agr_prune_masks)
 
     @tff.federated_computation(
         tff.type_at_server(server_state_type),
@@ -380,11 +405,7 @@ def build_fed_avg_process(
 
         # average mask
         aggregated_model_masks = tff.federated_mean(
-            client_outputs.optimizer_output['prune_masks'],
-            weight=client_weight)
-
-        aggregated_masks_num = tff.federated_mean(
-            client_outputs.optimizer_output['num_masks'],
+            client_outputs.optimizer_output['new_masks'],
             weight=client_weight)
 
         # apply model delta and average mask to server
@@ -395,7 +416,7 @@ def build_fed_avg_process(
         if aggregated_outputs.type_signature.is_struct():
             aggregated_outputs = tff.federated_zip(aggregated_outputs)
 
-        return server_state, aggregated_outputs, aggregated_masks_num
+        return server_state, aggregated_outputs
 
     @tff.federated_computation
     def initialize_fn():
