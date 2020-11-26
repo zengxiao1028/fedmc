@@ -195,6 +195,7 @@ def update_masks(model):
 
     new_masks =tf.nest.map_structure(lambda a, b, c: update_mask(a, b, c),
                             weight_vars, mask_vars, target_sparsities)
+
     return new_masks
 
 
@@ -261,7 +262,6 @@ def create_client_update_fn():
         return ClientOutput(
             weights_delta, client_weight, aggregated_outputs,
             collections.OrderedDict([('num_examples', num_examples),
-                                   #  ('prune_masks', model_weights.pruning_vars[1]),
                                     ('new_masks', new_masks)]) )
 
     return client_update
@@ -408,6 +408,7 @@ def build_fed_avg_process(
             client_outputs.optimizer_output['new_masks'],
             weight=client_weight)
 
+
         # apply model delta and average mask to server
         server_state = tff.federated_map(server_update_fn,
                                          (server_state, model_delta, aggregated_model_masks))
@@ -416,7 +417,7 @@ def build_fed_avg_process(
         if aggregated_outputs.type_signature.is_struct():
             aggregated_outputs = tff.federated_zip(aggregated_outputs)
 
-        return server_state, aggregated_outputs
+        return server_state, aggregated_outputs, aggregated_model_masks
 
     @tff.federated_computation
     def initialize_fn():

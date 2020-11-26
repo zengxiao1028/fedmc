@@ -112,6 +112,13 @@ def _comopute_sparse_rate(model):
   flat = np.hstack([a.flatten() for a in model.pruning_vars[1]])
   return 1 - np.mean(flat)
 
+def _compute_diff_rate(mask):
+  flat = np.hstack([a.flatten() for a in mask])
+  indices = np.where(np.logical_and(flat > 0.0, flat < 1.0))
+  dif = flat[indices]
+  dif_rate = dif.size / flat.size * 100
+  return dif_rate
+
 
 def run(iterative_process: tff.templates.IterativeProcess,
         client_datasets_fn: Callable[[int], List[tf.data.Dataset]],
@@ -237,7 +244,7 @@ def run(iterative_process: tff.templates.IterativeProcess,
     # determined (and possibly fixed).
     try:
       with profiler(round_num):
-        state, round_metrics = iterative_process.next(state,
+        state, round_metrics, mask = iterative_process.next(state,
                                                       federated_train_data)
     except (tf.errors.FailedPreconditionError, tf.errors.NotFoundError,
             tf.errors.InternalError) as e:
@@ -249,7 +256,10 @@ def run(iterative_process: tff.templates.IterativeProcess,
     train_metrics['model_delta_l2_norm'] = _compute_numpy_l2_difference(
         state.model, prev_model)
     train_metrics['sparse_rate'] = _comopute_sparse_rate(state.model)
+    train_metrics['diff_rate'] = _compute_diff_rate(mask)
     train_metrics.update(round_metrics)
+
+
 
     logging.info('Round {:2d}, {:.2f}s per round in average.'.format(
         round_num, (time.time() - loop_start_time) / (round_num + 1)))
