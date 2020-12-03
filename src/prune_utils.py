@@ -128,22 +128,22 @@ class PrunableLayer(pruning_wrapper.PruneLowMagnitude):
             training = K.learning_phase()
 
         if self.enable_prune:
-            def add_update():
-                with tf.control_dependencies([
-                    tf.debugging.assert_greater_equal(
-                        self.pruning_step,
-                        np.int64(0),
-                        message=self._PRUNE_CALLBACK_ERROR_MSG)
-                ]):
-                    # with tf.control_dependencies(
-                    #         [self.pruning_obj.conditional_mask_update()]):
-                        return tf.no_op('update')
-
-            def no_op():
-                return tf.no_op('no_update')
-
-            update_op = utils.smart_cond(training, add_update, no_op)
-            self.add_update(update_op)
+            # def add_update():
+            #     with tf.control_dependencies([
+            #         tf.debugging.assert_greater_equal(
+            #             self.pruning_step,
+            #             np.int64(0),
+            #             message=self._PRUNE_CALLBACK_ERROR_MSG)
+            #     ]):
+            #         # with tf.control_dependencies(
+            #         #         [self.pruning_obj.conditional_mask_update()]):
+            #             return tf.no_op('update')
+            #
+            # def no_op():
+            #     return tf.no_op('no_update')
+            #
+            # update_op = utils.smart_cond(training, add_update, no_op)
+            # self.add_update(update_op)
             # Always execute the op that performs weights = weights * mask
             # Relies on UpdatePruningStep callback to ensure the weights
             # are sparse after the final backpropagation.
@@ -164,110 +164,6 @@ class PrunableLayer(pruning_wrapper.PruneLowMagnitude):
         return self.layer.call(inputs)
 
 
-class PrunableLayer2(pruning_wrapper.PruneLowMagnitude):
-    """
-    Augment a keras layer into a prunable layer
-    """
-
-    def __init__(self,
-                 layer,
-                 pruning_schedule=pruning_sched.ConstantSparsity(0.5, 0),
-                 block_size=(1, 1),
-                 block_pooling_type='AVG',
-                 enable_prune=True,
-                 **kwargs):
-        super(PrunableLayer, self).__init__(layer, pruning_schedule, block_size, block_pooling_type, **kwargs)
-        self.enable_prune = enable_prune
-
-
-    def build(self, input_shape):
-        super(pruning_wrapper.PruneLowMagnitude, self).build(input_shape)
-
-        weight_vars, mask_vars, threshold_vars = [], [], []
-
-        self.prunable_weights = self.layer.get_prunable_weights()
-
-        # For each of the prunable weights, add mask and threshold variables
-        for weight in self.prunable_weights:
-            mask = self.add_variable(
-                'prune_mask',
-                shape=weight.shape,
-                initializer=tf.keras.initializers.get('ones'),
-                dtype=weight.dtype,
-                trainable=False,
-                aggregation=tf.VariableAggregation.MEAN)
-            threshold = self.add_variable(
-                'threshold',
-                shape=[],
-                initializer=tf.keras.initializers.get('zeros'),
-                dtype=weight.dtype,
-                trainable=False,
-                aggregation=tf.VariableAggregation.MEAN)
-
-            weight_vars.append(weight)
-            mask_vars.append(mask)
-            threshold_vars.append(threshold)
-        self.pruning_vars = list(zip(weight_vars, mask_vars, threshold_vars))
-
-        # Add a scalar tracking the number of updates to the wrapped layer.
-        self.pruning_step = self.add_variable(
-            'pruning_step',
-            shape=[],
-            initializer=tf.keras.initializers.Constant(0), #start from 0 to avoid error
-            dtype=tf.int64,
-            trainable=False)
-
-        def training_step_fn():
-            return self.pruning_step
-
-        # Create a pruning object
-        self.pruning_obj = pruning_impl.Pruning(
-            training_step_fn=training_step_fn,
-            pruning_vars=self.pruning_vars,
-            pruning_schedule=self.pruning_schedule,
-            block_size=self.block_size,
-            block_pooling_type=self.block_pooling_type)
-
-    def call(self, inputs, training=None):
-        if training is None:
-            training = K.learning_phase()
-
-        if self.enable_prune:
-            def add_update():
-                with tf.control_dependencies([
-                    tf.debugging.assert_greater_equal(
-                        self.pruning_step,
-                        np.int64(0),
-                        message=self._PRUNE_CALLBACK_ERROR_MSG)
-                ]):
-                    # with tf.control_dependencies(
-                    #         [self.pruning_obj.conditional_mask_update()]):
-                    #     return tf.no_op('update')
-                    return tf.no_op('update')
-
-            def no_op():
-                return tf.no_op('no_update')
-
-            update_op = utils.smart_cond(training, add_update, no_op)
-            self.add_update(update_op)
-            # Always execute the op that performs weights = weights * mask
-            # Relies on UpdatePruningStep callback to ensure the weights
-            # are sparse after the final backpropagation.
-            #
-            # self.add_update does nothing during eager execution.
-            self.add_update(self.pruning_obj.weight_mask_op())
-            # TODO(evcu) remove this check after dropping py2 support. In py3 getargspec
-            # is deprecated.
-        if hasattr(inspect, 'getfullargspec'):
-            args = inspect.getfullargspec(self.layer.call).args
-        else:
-            args = inspect.getargspec(self.layer.call).args
-        # Propagate the training bool to the underlying layer if it accepts
-        # training as an arg.
-        if 'training' in args:
-            return self.layer.call(inputs, training=training)
-
-        return self.layer.call(inputs)
 
 
 def assign_add(tensors):
@@ -278,7 +174,7 @@ def assign_add(tensors):
         return tf.group(*tf.nest.flatten(
             tf.nest.map_structure(lambda a: a.assign(tf.math.add(a,1)), tensors)))
 
-def assign_add2(tensors1, tensors2):
+def assign_addv2(tensors1, tensors2):
     if isinstance(tensors1, structure.Struct):
         return tf.group(*structure.flatten(
             structure.map_structure(lambda a, b: a.assign(tf.math.add(a, b)), tensors1, tensors2)))
