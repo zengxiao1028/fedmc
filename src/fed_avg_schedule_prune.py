@@ -131,7 +131,7 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
         model=model_weights,
         optimizer_state=server_optimizer.variables(),
         round_num=server_state.round_num + 1.0,
-        server_masks=server_masks)
+        server_masks=server_state.server_masks)
 
 
 @attr.s(eq=False, order=False, frozen=True)
