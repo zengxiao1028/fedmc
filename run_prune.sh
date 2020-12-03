@@ -3,7 +3,7 @@
 export PYTHONPATH="${PYTHONPATH}:./federated"
 
 python federated_trainer.py --task=emnist_cr \
-                            --total_rounds=1500 \
+                            --total_rounds=1800 \
                             --client_optimizer=sgd \
                             --client_learning_rate=0.0032 \
                             --client_lr_schedule=exp_decay \
@@ -18,8 +18,11 @@ python federated_trainer.py --task=emnist_cr \
                             --server_adam_beta_1=0.9 \
                             --server_adam_beta_2=0.99 \
                             --rounds_per_checkpoint=100 \
-                            --experiment_name=prune_emnist_fedavg_test3 \
+                            --experiment_name=prune_emnist_fedavg_fedmc3 \
                             --enable_prune=true \
+                            --begin_step=300 \
+                            --end_step=1500 \
+                            --initial_sparsity=0.0 \
                             --final_sparsity=0.9 \
                             --root_output_dir=./result
 
