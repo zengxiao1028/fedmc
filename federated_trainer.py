@@ -35,7 +35,8 @@ from optimization.emnist_ae import federated_emnist_ae
 from optimization.shakespeare import federated_shakespeare
 from src import fed_avg_schedule_prune
 from optimization.shared import optimizer_utils
-from optimization.stackoverflow import federated_stackoverflow
+#from optimization.stackoverflow import federated_stackoverflow
+from src.run import federated_stackoverflow_prune
 from optimization.stackoverflow_lr import federated_stackoverflow_lr
 from utils import utils_impl
 
@@ -265,7 +266,7 @@ def main(argv):
   elif FLAGS.task == 'shakespeare':
     run_federated_fn = federated_shakespeare.run_federated
   elif FLAGS.task == 'stackoverflow_nwp':
-    run_federated_fn = federated_stackoverflow.run_federated
+    run_federated_fn = federated_stackoverflow_prune.run_federated
   elif FLAGS.task == 'stackoverflow_lr':
     run_federated_fn = federated_stackoverflow_lr.run_federated
   else:
