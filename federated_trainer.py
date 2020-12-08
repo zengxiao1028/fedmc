@@ -30,13 +30,13 @@ import tensorflow_federated as tff
 client_devices = tf.config.list_logical_devices('GPU')
 tff.backends.native.set_local_execution_context(client_tf_devices=client_devices)
 from optimization.cifar100 import federated_cifar100
-from src.run import federated_emnist_prune
+from src.emnist_cr import federated_emnist_prune
 from optimization.emnist_ae import federated_emnist_ae
 from optimization.shakespeare import federated_shakespeare
 from src import fed_avg_schedule_prune
 from optimization.shared import optimizer_utils
 #from optimization.stackoverflow import federated_stackoverflow
-from src.run import federated_stackoverflow_prune
+from src.so_nwp import federated_stackoverflow_prune
 from optimization.stackoverflow_lr import federated_stackoverflow_lr
 from utils import utils_impl
 

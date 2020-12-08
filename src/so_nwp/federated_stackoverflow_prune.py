@@ -22,12 +22,11 @@ import tensorflow as tf
 import tensorflow_federated as tff
 
 from optimization.shared import keras_metrics
-from utils import training_loop
+from src import training_loop
 from utils import training_utils
-from utils.datasets import stackoverflow_dataset
-from src.fedmc_models import stackoverflow_models
+from src.so_nwp import stackoverflow_models, stackoverflow_dataset
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule as pruning_sched
-
+from src.so_nwp import stackoverflow
 def run_federated(
     iterative_process_builder: Callable[..., tff.templates.IterativeProcess],
     client_epochs_per_round: int,
@@ -156,7 +155,7 @@ def run_federated(
         keras_metrics.NumTokensCounter(masked_tokens=[pad_token])
     ]
 
-  train_clientdata, _, _ = tff.simulation.datasets.stackoverflow.load_data()
+  train_clientdata, _, _ = stackoverflow.load_data(cache_dir='./datasets')
 
   # TODO(b/161914546): consider moving evaluation to use
   # `tff.learning.build_federated_evaluation` to get metrics over client

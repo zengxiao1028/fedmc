@@ -28,7 +28,7 @@ from tensorflow_model_optimization.python.core.sparsity.keras import pruning_sch
 from src import training_loop
 from utils import training_utils
 from utils.datasets import emnist_dataset
-from src.fedmc_models.emnist_models import create_model
+from src.emnist_cr.emnist_models import create_model
 
 
 

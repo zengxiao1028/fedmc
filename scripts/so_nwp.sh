@@ -6,7 +6,7 @@ export PYTHONPATH="${PYTHONPATH}:./federated"
 
 python federated/optimization/main/federated_trainer.py \
                             --task=stackoverflow_nwp \
-                            --so_nwp_vocab_size=1000 \
+                            --so_nwp_vocab_size=10000 \
                             --so_nwp_num_oov_buckets=1 \
                             --so_nwp_sequence_length=20 \
                             --so_nwp_num_validation_examples=10000 \
@@ -30,5 +30,5 @@ python federated/optimization/main/federated_trainer.py \
                             --server_adam_beta_2=0.99 \
                             --server_adam_epsilon=0.0001 \
                             --rounds_per_checkpoint=100 \
-                            --experiment_name=so_fedavg_official \
+                            --experiment_name=so_fedavg_official2 \
                             --root_output_dir=./result_so
