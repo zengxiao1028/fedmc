@@ -97,9 +97,12 @@ with utils_impl.record_hparam_flags() as prune_flags:
     flags.DEFINE_integer('begin_step', 300, 'which step should the pruning start from')
     flags.DEFINE_integer('end_step', 1500, 'which step should the pruning start from')
     flags.DEFINE_integer('frequency', 1, 'every \'frequency\' step runs the pruning')
+    flags.DEFINE_integer('cache_num', 1, 'How many masks to be cache in server')
     flags.DEFINE_float('initial_sparsity', 0.0, 'Sparsity (%) at which pruning begins.')
     flags.DEFINE_float('final_sparsity', 0.7, 'Sparsity (%) at which pruning ends.')
     flags.DEFINE_integer('power', 2, 'Exponent to be used in the sparsity function.')
+    flags.DEFINE_boolean('server_mc', False, 'use server mc (baseline)')
+
 
 with utils_impl.record_hparam_flags() as cifar100_flags:
   # CIFAR-100 flags

@@ -33,7 +33,8 @@ import tensorflow_federated as tff
 from tensorflow_federated.python.tensorflow_libs import tensor_utils
 from src import prune_utils
 import tensorflow_model_optimization as tfmot
-
+from absl import flags
+FLAGS = flags.FLAGS
 
 # Convenience type aliases.
 ModelBuilder = Callable[[], tff.learning.Model]
@@ -72,7 +73,9 @@ class ServerState(object):
     model = attr.ib()
     optimizer_state = attr.ib()
     round_num = attr.ib()
-    server_masks = attr.ib()
+    cache_masks = attr.ib()
+    cache_num = attr.ib()
+
     # This is a float to avoid type incompatibility when calculating learning rate
     # schedules.
 
@@ -96,8 +99,7 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
     tff.utils.assign(model_weights, server_state.model)
     # Server optimizer variables must be initialized prior to invoking this
     tff.utils.assign(server_optimizer.variables(), server_state.optimizer_state)
-    #restore server masks from previous state
-    #tff.utils.assign(server_masks, server_state.server_masks)
+
 
     weights_delta, has_non_finite_weight = (
         tensor_utils.zero_all_if_any_non_finite(weights_delta))
@@ -112,14 +114,26 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
 
     server_optimizer.apply_gradients(grads_and_vars)
 
-    ### use server model to compute mask (ServerMC)
-    ### new_masks = update_masks(model)
-    ### tff.utils.assign(model_weights.pruning_vars[1], new_masks)
+    if FLAGS.server_mc:
+        # use server model to compute mask (ServerMC)
+        new_masks = update_masks(model)
+    else:
+        new_masks = tf.nest.map_structure(lambda x: tf.math.abs(x), agr_prune_masks)
 
+    # cached
+    if FLAGS.cache_num > 1:
+        new_cache_mask = tf.nest.map_structure(lambda x, y: tf.math.add(x,y), server_state.cache_masks, new_masks)
+        new_cache_num = server_state.cache_num + 1.0
+        if new_cache_num == FLAGS.cache_num:
+            new_masks =generate_masks_from_cache_masks(model, new_cache_mask) #generate new_masks from new_masks
+            #reset cache
+            new_cache_mask = tf.nest.map_structure(lambda a: tf.zeros_like(a, dtype=a.dtype), new_cache_mask)
+            new_cache_num = 0.0
+    else:
+        new_cache_mask = server_state.cache_masks
+        new_cache_num = 0.0
 
-    tff.utils.assign(model_weights.pruning_vars[1], agr_prune_masks)
-
-
+    tff.utils.assign(model_weights.pruning_vars[1], new_masks)
 
     # update pruning step
     pruning_steps = prune_utils.get_vars_by_name(model_weights.non_trainable, 'pruning_step')
@@ -131,7 +145,8 @@ def server_update(model, server_optimizer, server_state, weights_delta, agr_prun
         model=model_weights,
         optimizer_state=server_optimizer.variables(),
         round_num=server_state.round_num + 1.0,
-        server_masks=server_state.server_masks)
+        cache_masks=new_cache_mask,
+        cache_num=new_cache_num)
 
 
 @attr.s(eq=False, order=False, frozen=True)
@@ -155,8 +170,8 @@ class ClientOutput(object):
     optimizer_output = attr.ib()
 
 
-#TODO: update mask when needed
-def update_masks(model, keep_sign):
+
+def update_masks(model, keep_sign=False):
     """
     :param model: a tff.learning.model or a enhanced one
     """
@@ -205,6 +220,52 @@ def update_masks(model, keep_sign):
 
     return new_masks
 
+def generate_masks_from_cache_masks(model, cache_masks):
+    """
+       :param model: a tff.learning.model or a enhanced one
+       """
+
+    def update_mask(weights, mask, sparsity):
+        abs_weights = tf.math.abs(weights)
+
+        k = tf.dtypes.cast(
+            tf.math.round(
+                tf.dtypes.cast(tf.size(abs_weights), tf.float32) *
+                (1 - sparsity)), tf.int32)
+
+        # orig_shape = tf.shape(abs_weights)
+        # z = -tf.math.log(-tf.math.log(tf.random.uniform(orig_shape, 0, 1)))
+        # sel = tf.reshape(abs_weights + z, [-1])
+        # _, indices = tf.math.top_k(sel, k, sorted=False)
+        # indices = tf.reshape(indices, [-1, 1])
+        # new_mask = tf.dtypes.cast(tf.scatter_nd(indices, tf.ones(tf.shape(indices)[0]), (tf.shape(sel)[0],) ), weights.dtype)
+        # new_mask = tf.reshape(new_mask, orig_shape)
+
+        # Sort the entire array
+        values, _ = tf.math.top_k(
+            tf.reshape(abs_weights, [-1]), k=tf.size(abs_weights))
+        # Grab the (k-1)th value
+        current_threshold = tf.gather(values, k - 1)
+        new_mask = tf.dtypes.cast(
+            tf.math.greater_equal(abs_weights, current_threshold), weights.dtype)
+
+        return new_mask
+
+    #get sparsities
+    keras_model = model._model._keras_model
+    weight_vars, mask_vars, target_sparsities = [], [], []
+    for layer in keras_model.layers:
+        if hasattr(layer, 'pruning_vars'):
+            for w_var, m_var, sparsity in layer.pruning_vars:
+                weight_vars.append(w_var)
+                mask_vars.append(m_var)
+                _, sparsity = layer.pruning_schedule(layer.pruning_step)
+                target_sparsities.append(sparsity)
+
+    new_masks = tf.nest.map_structure(lambda a, b, c: update_mask(a, b, c),
+                                      cache_masks, mask_vars, target_sparsities)
+
+    return new_masks
 
 
 def create_client_update_fn():
@@ -300,14 +361,15 @@ def build_server_init_fn(
         model_weights = _get_weights(model)
 
         #create server masks for aggregating client masks
-        server_masks = tf.nest.map_structure(lambda a: tf.zeros_like(a, dtype=a.dtype), model_weights.pruning_vars[1])
+        cache_masks = tf.nest.map_structure(lambda a: tf.zeros_like(a, dtype=a.dtype), model_weights.pruning_vars[1])
 
-        #server_masks = model_weights.pruning_vars[1]
+
         return ServerState(
             model=model_weights,
             optimizer_state=server_optimizer.variables(),
             round_num=0.0,
-            server_masks=server_masks)
+            cache_masks=cache_masks,
+            cache_num=0.0)
 
     return server_init_tf
 
@@ -369,7 +431,7 @@ def build_fed_avg_process(
         return client_update(model_fn(), tf_dataset, initial_model_weights,
                              client_optimizer, client_weight_fn)
 
-    @tff.tf_computation(server_state_type, model_weights_type.trainable, server_state_type.server_masks)
+    @tff.tf_computation(server_state_type, model_weights_type.trainable, server_state_type.cache_masks)
     def server_update_fn(server_state, model_delta, agr_prune_masks):
         model = model_fn()
         server_lr = server_lr_schedule(server_state.round_num)
@@ -412,6 +474,7 @@ def build_fed_avg_process(
         aggregated_model_masks = tff.federated_mean(
             client_outputs.optimizer_output['new_masks'],
             weight=client_weight)
+
 
         # apply model delta and average mask to server
         server_state = tff.federated_map(server_update_fn,

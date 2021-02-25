@@ -1,8 +1,6 @@
 #!/bin/bash
 
-
 export PYTHONPATH="${PYTHONPATH}:./federated"
-
 
 python federated/optimization/main/federated_trainer.py \
                             --task=stackoverflow_nwp \
@@ -30,5 +28,6 @@ python federated/optimization/main/federated_trainer.py \
                             --server_adam_beta_2=0.99 \
                             --server_adam_epsilon=0.0001 \
                             --rounds_per_checkpoint=100 \
+                            --rounds_per_eval=10 \
                             --experiment_name=so_fedavg_official2 \
                             --root_output_dir=./result_so
