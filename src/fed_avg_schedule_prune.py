@@ -311,7 +311,7 @@ def create_client_update_fn():
             client_optimizer.apply_gradients(grads_and_vars)
             num_examples += tf.shape(output.predictions)[0]
 
-        new_masks = update_masks(model,keep_sign=False)
+        new_masks = update_masks(model,keep_sign=FLAGS.keep_sign)
 
         aggregated_outputs = model.report_local_outputs()
         weights_delta = tf.nest.map_structure(lambda a, b: a - b,
