@@ -484,7 +484,7 @@ def build_fed_avg_process(
         if aggregated_outputs.type_signature.is_struct():
             aggregated_outputs = tff.federated_zip(aggregated_outputs)
 
-        return server_state, aggregated_outputs, aggregated_model_masks
+        return server_state, aggregated_outputs
 
     @tff.federated_computation
     def initialize_fn():
